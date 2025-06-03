@@ -3,6 +3,8 @@ from linebot.v3 import WebhookParser
 from linebot.v3.messaging import MessagingApi, ReplyMessageRequest, TextMessage
 from linebot.v3.messaging import Configuration, ApiClient
 
+import os
+
 app = Flask(__name__)
 
 # 把這裡的 Channel Access Token 和 Secret 換成你自己的
@@ -40,4 +42,5 @@ def callback():
     return 'OK'
 
 if __name__ == "__main__":
-    app.run()
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
