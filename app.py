@@ -4,6 +4,8 @@ from linebot.v3.messaging import MessagingApi, ReplyMessageRequest, TextMessage
 from linebot.v3.messaging import Configuration, ApiClient
 
 import os
+import sqlite3
+from datetime import datetime
 
 app = Flask(__name__)
 
@@ -16,6 +18,24 @@ configuration = Configuration(access_token=channel_access_token)
 # parser 負責驗證簽名
 parser = WebhookParser(channel_secret)
 
+# 初始化 SQLite 資料庫
+def init_db():
+    conn = sqlite3.connect("food_records.db")
+    c = conn.cursor()
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS foods (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT,
+            food_name TEXT,
+            expiry_date TEXT,
+            created_at TEXT
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+init_db()
+
 @app.route("/callback", methods=['POST'])
 def callback():
     signature = request.headers['X-Line-Signature']
@@ -24,7 +44,6 @@ def callback():
     try:
         events = parser.parse(body, signature)
     except Exception as e:
-        print("驗證錯誤：", e)
         abort(400)
 
     with ApiClient(configuration) as api_client:
@@ -34,8 +53,32 @@ def callback():
             if event.type == "message" and event.message.type == "text":
                 reply_token = event.reply_token
                 user_text = event.message.text
+                user_id = event.source.user_id
 
-                message = TextMessage(text=user_text)
+                # 嘗試解析輸入格式為「食物名稱 yyyy-mm-dd」
+                try:
+                    parts = user_text.strip().split()
+                    if len(parts) != 2:
+                        raise ValueError("格式錯誤")
+
+                    food_name = parts[0]
+                    expiry_date = datetime.strptime(parts[1], "%Y-%m-%d").date()
+
+                    # 儲存到資料庫
+                    conn = sqlite3.connect("food_records.db")
+                    c = conn.cursor()
+                    c.execute('''
+                        INSERT INTO foods (user_id, food_name, expiry_date, created_at)
+                        VALUES (?, ?, ?, ?)
+                    ''', (user_id, food_name, expiry_date.isoformat(), datetime.now().isoformat()))
+                    conn.commit()
+                    conn.close()
+
+                    reply_text = f"✅ 已記錄：{food_name}，有效期限為 {expiry_date}。"
+                except Exception as e:
+                    reply_text = "❌ 請用正確格式輸入，例如：\n牛奶 2025-06-10"
+
+                message = TextMessage(text=reply_text)
                 req = ReplyMessageRequest(reply_token=reply_token, messages=[message])
                 line_bot_api.reply_message(req)
 
