@@ -6,8 +6,8 @@ from linebot.v3.messaging import Configuration, ApiClient
 
 import os
 import psycopg2
-from datetime import datetime
-from collections import defaultdict, timedelta
+from datetime import datetime, timedelta
+from collections import defaultdict
 
 app = Flask(__name__)
 
