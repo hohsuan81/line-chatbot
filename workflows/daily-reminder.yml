@@ -1,0 +1,14 @@
+name: Daily Reminder
+
+on:
+  schedule:
+    - cron: "0 1 * * *"  # 台灣時間 9:00（UTC +8）
+  workflow_dispatch:     # 可手動觸發
+
+jobs:
+  call-reminder-api:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call /run-reminder endpoint
+        run: |
+          curl -X GET "https://line-chatbot-4zmd.onrender.com/run-reminder"
