@@ -3,11 +3,12 @@ from flask import jsonify
 from linebot.v3 import WebhookParser
 from linebot.v3.messaging import MessagingApi, ReplyMessageRequest, TextMessage, PushMessageRequest
 from linebot.v3.messaging import Configuration, ApiClient
+from scheduler import daily_expiry_reminder
 
 import os
 import psycopg2
-from datetime import datetime, timedelta
-from collections import defaultdict
+from datetime import datetime
+import re
 
 app = Flask(__name__)
 
@@ -41,6 +42,19 @@ def init_db():
     conn.close()
 
 init_db()
+
+def alter_table():
+    try:
+        conn = psycopg2.connect(os.environ.get("DATABASE_URL"))
+        cur = conn.cursor()
+        cur.execute("ALTER TABLE foods ADD COLUMN IF NOT EXISTS is_consumed BOOLEAN")
+        conn.commit()
+        conn.close()
+        print("資料表已更新")
+    except Exception as e:
+        print("跳過 ALTER TABLE：", e)
+
+alter_table()
 
 @app.route("/callback", methods=['POST'])
 def callback():
@@ -87,35 +101,32 @@ def callback():
                 req = ReplyMessageRequest(reply_token=reply_token, messages=[message])
                 line_bot_api.reply_message(req)
 
+            elif event.type == "postback":
+                data = event.postback.data
+                if data.startswith("consumed::"):
+                    try:
+                        _, food_name, expiry_date = data.split("::")
+                        user_id = event.source.user_id
+
+                        conn = psycopg2.connect(os.environ.get("DATABASE_URL"))
+                        cur = conn.cursor()
+                        cur.execute("""
+                            UPDATE foods
+                            SET is_consumed = TRUE
+                            WHERE user_id = %s AND food_name = %s AND expiry_date = %s
+                        """, (user_id, food_name, expiry_date))
+                        conn.commit()
+                        conn.close()
+
+                        # 回覆使用者
+                        reply_token = event.reply_token
+                        message = TextMessage(text=f"✅ 已記錄你吃完了 {food_name}！")
+                        req = ReplyMessageRequest(reply_token=reply_token, messages=[message])
+                        line_bot_api.reply_message(req)
+                    except Exception as e:
+                        print("處理 postback 發生錯誤：", e)
+
     return 'OK'
-
-def daily_expiry_reminder():
-    print("⌛ 執行每日到期提醒")
-    
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute('''
-        SELECT user_id, food_name, expiry_date
-        FROM foods
-        WHERE expiry_date <= %s
-        ORDER BY user_id, expiry_date
-    ''', (datetime.now().date() + timedelta(days=3),))
-    rows = c.fetchall()
-    conn.close()
-
-    # 整理每個使用者的提醒清單
-    user_foods = defaultdict(list)
-    for user_id, name, date in rows:
-        user_foods[user_id].append(f"• {name}（{date}）")
-
-    # 傳送提醒訊息給每個使用者
-    with ApiClient(configuration) as api_client:
-        line_bot_api = MessagingApi(api_client)
-
-        for user_id, foods in user_foods.items():
-            text = "🔔 每日提醒：以下食物即將過期\n" + "\n".join(foods)
-            req = PushMessageRequest(to=user_id, messages=[TextMessage(text=text)])
-            line_bot_api.push_message(req)
 
 @app.route("/run-reminder", methods=["GET"])
 def run_reminder():

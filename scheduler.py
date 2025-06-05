@@ -1,5 +1,8 @@
 from apscheduler.schedulers.background import BackgroundScheduler
-from linebot.v3.messaging import MessagingApi, TextMessage, PushMessageRequest
+from linebot.v3.messaging import (
+    MessagingApi, TextMessage, PushMessageRequest, TemplateMessage,
+    ButtonsTemplate, PostbackAction
+)
 from linebot.v3.messaging import Configuration, ApiClient
 
 import psycopg2
@@ -44,8 +47,24 @@ def daily_expiry_reminder():
         line_bot_api = MessagingApi(api_client)
 
         for user_id, foods in user_foods.items():
-            text = "🔔 每日提醒：以下食物即將過期\n" + "\n".join(foods)
-            req = PushMessageRequest(to=user_id, messages=[TextMessage(text=text)])
+            food_name, expiry = foods.split("（")
+            expiry = expiry.strip("）")
+        
+            # 建立按鈕訊息
+            template = TemplateMessage(
+                alt_text=f"{food_name} 即將過期",
+                template=ButtonsTemplate(
+                    title=food_name,
+                    text=f"到期日：{expiry}",
+                    actions=[
+                        PostbackAction(
+                            label="✅ 已吃完",
+                            data=f"consumed::{food_name}::{expiry}"
+                        )
+                    ]
+                )
+            )
+            req = PushMessageRequest(to=user_id, messages=[template])
             line_bot_api.push_message(req)
 
 # 啟動排程器
