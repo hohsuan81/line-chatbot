@@ -43,32 +43,37 @@ def daily_expiry_reminder():
         user_foods[user_id].append(f"• {name}（{date}）")
 
     # 傳送提醒訊息給每個使用者
-    with ApiClient(configuration) as api_client:
-        line_bot_api = MessagingApi(api_client)
+    for user_id, foods in user_foods.items():
+        with ApiClient(configuration) as api_client:
+            line_bot_api = MessagingApi(api_client)
 
-        for user_id, foods in user_foods.items():
-            food_name, expiry = foods.split("（")
-            expiry = expiry.strip("）")
-        
-            # 建立按鈕訊息
-            template = TemplateMessage(
-                alt_text=f"{food_name} 即將過期",
-                template=ButtonsTemplate(
-                    title=food_name,
-                    text=f"到期日：{expiry}",
-                    actions=[
-                        PostbackAction(
-                            label="✅ 已吃完",
-                            data=f"consumed::{food_name}::{expiry}"
+            for item in foods:
+                try:
+                    # 移除「• 」開頭並分割
+                    clean_item = item.lstrip("• ").strip()
+                    food_name, expiry = clean_item.split("（")
+                    expiry = expiry.strip("）")
+
+                    # 建立按鈕訊息
+                    template = TemplateMessage(
+                        alt_text=f"{food_name} 即將過期",
+                        template=ButtonsTemplate(
+                            title=food_name,
+                            text=f"到期日：{expiry}",
+                            actions=[
+                                PostbackAction(
+                                    label="✅ 已吃完",
+                                    data=f"consumed::{food_name}::{expiry}"
+                                )
+                            ]
                         )
-                    ]
-                )
-            )
-        try:
-            req = PushMessageRequest(to=user_id, messages=[template])
-            line_bot_api.push_message(req)
-        except Exception as e:
-            print("❌ 推播訊息失敗：", e)
+                    )
+
+                    req = PushMessageRequest(to=user_id, messages=[template])
+                    line_bot_api.push_message(req)
+
+                except Exception as e:
+                    print("❌ 推播失敗：", e)
 
 # 啟動排程器
 scheduler.start()
