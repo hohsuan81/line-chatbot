@@ -1,11 +1,13 @@
 from flask import Flask, request, abort
+from flask import jsonify
 from linebot.v3 import WebhookParser
-from linebot.v3.messaging import MessagingApi, ReplyMessageRequest, TextMessage
+from linebot.v3.messaging import MessagingApi, ReplyMessageRequest, TextMessage, PushMessageRequest
 from linebot.v3.messaging import Configuration, ApiClient
 
 import os
 import psycopg2
 from datetime import datetime
+from collections import defaultdict, timedelta
 
 app = Flask(__name__)
 
@@ -86,6 +88,42 @@ def callback():
                 line_bot_api.reply_message(req)
 
     return 'OK'
+
+def daily_expiry_reminder():
+    print("⌛ 執行每日到期提醒")
+    
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute('''
+        SELECT user_id, food_name, expiry_date
+        FROM foods
+        WHERE expiry_date <= %s
+        ORDER BY user_id, expiry_date
+    ''', (datetime.now().date() + timedelta(days=3),))
+    rows = c.fetchall()
+    conn.close()
+
+    # 整理每個使用者的提醒清單
+    user_foods = defaultdict(list)
+    for user_id, name, date in rows:
+        user_foods[user_id].append(f"• {name}（{date}）")
+
+    # 傳送提醒訊息給每個使用者
+    with ApiClient(configuration) as api_client:
+        line_bot_api = MessagingApi(api_client)
+
+        for user_id, foods in user_foods.items():
+            text = "🔔 每日提醒：以下食物即將過期\n" + "\n".join(foods)
+            req = PushMessageRequest(to=user_id, messages=[TextMessage(text=text)])
+            line_bot_api.push_message(req)
+
+@app.route("/run-reminder", methods=["GET"])
+def run_reminder():
+    try:
+        daily_expiry_reminder()
+        return jsonify({"status": "success", "message": "Reminder executed."}), 200
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
