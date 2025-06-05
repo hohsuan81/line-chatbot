@@ -64,8 +64,11 @@ def daily_expiry_reminder():
                     ]
                 )
             )
+        try:
             req = PushMessageRequest(to=user_id, messages=[template])
             line_bot_api.push_message(req)
+        except Exception as e:
+            print("❌ 推播訊息失敗：", e)
 
 # 啟動排程器
 scheduler.start()
