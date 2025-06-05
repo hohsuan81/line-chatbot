@@ -19,7 +19,7 @@ def get_connection():
     return psycopg2.connect(os.environ.get("DATABASE_URL"))
 
 # 每日提醒任務（早上 9:00 執行）
-@scheduler.scheduled_job('cron', minute='*/1')
+@scheduler.scheduled_job('cron', hour=9, minute=0)
 def daily_expiry_reminder():
     print("⌛ 執行每日到期提醒")
     
