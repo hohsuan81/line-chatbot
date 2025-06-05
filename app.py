@@ -56,6 +56,23 @@ def alter_table():
 
 alter_table()
 
+def analyze_user_behavior(user_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT COUNT(*), SUM(CASE WHEN consumed THEN 1 ELSE 0 END)
+        FROM foods
+        WHERE user_id = %s
+    """, (user_id,))
+    total, consumed = cursor.fetchone()
+    conn.close()
+
+    if total == 0:
+        return "📊 目前還沒有資料可供分析喔！"
+    else:
+        rate = (consumed / total) * 100
+        return f"📊 你的食物消耗率為 {rate:.1f}%。保持良好的習慣，減少浪費！"
+
 @app.route("/callback", methods=['POST'])
 def callback():
     signature = request.headers['X-Line-Signature']
@@ -75,27 +92,51 @@ def callback():
                 user_text = event.message.text
                 user_id = event.source.user_id
 
-                # 嘗試解析輸入格式為「食物名稱 yyyy-mm-dd」
-                try:
-                    parts = user_text.strip().split()
-                    if len(parts) != 2:
-                        raise ValueError("格式錯誤")
-
-                    food_name = parts[0]
-                    expiry_date = datetime.strptime(parts[1], "%Y-%m-%d").date()
-
+                if user_text == "/分析":
                     conn = get_connection()
-                    c = conn.cursor()
-                    c.execute('''
-                        INSERT INTO foods (user_id, food_name, expiry_date, created_at)
-                        VALUES (%s, %s, %s, %s)
-                    ''', (user_id, food_name, expiry_date, datetime.now()))
-                    conn.commit()
+                    cursor = conn.cursor()
+
+                    # 查詢使用者總共記錄了幾項食物，以及吃完幾項
+                    cursor.execute('''
+                        SELECT COUNT(*) FROM foods WHERE user_id = %s
+                    ''', (user_id,))
+                    total = cursor.fetchone()[0]
+
+                    cursor.execute('''
+                        SELECT COUNT(*) FROM foods WHERE user_id = %s AND consumed = TRUE
+                    ''', (user_id,))
+                    consumed = cursor.fetchone()[0]
+
                     conn.close()
 
-                    reply_text = f"✅ 已記錄：{food_name}，有效期限為 {expiry_date}。"
-                except Exception as e:
-                    reply_text = "❌ 請用正確格式輸入，例如：\n牛奶 2025-06-10"
+                    if total == 0:
+                        reply_text = "目前沒有任何食物紀錄喔 🍽️"
+                    else:
+                        rate = round(consumed / total * 100, 1)
+                        reply_text = f"📊 消費分析\n你總共紀錄了 {total} 項食物，其中 {consumed} 項已吃完。\n➡️ 消耗率：{rate}%"
+
+                else:
+                    # 嘗試解析輸入格式為「食物名稱 yyyy-mm-dd」
+                    try:
+                        parts = user_text.strip().split()
+                        if len(parts) != 2:
+                            raise ValueError("格式錯誤")
+
+                        food_name = parts[0]
+                        expiry_date = datetime.strptime(parts[1], "%Y-%m-%d").date()
+
+                        conn = get_connection()
+                        c = conn.cursor()
+                        c.execute('''
+                            INSERT INTO foods (user_id, food_name, expiry_date, created_at)
+                            VALUES (%s, %s, %s, %s)
+                        ''', (user_id, food_name, expiry_date, datetime.now()))
+                        conn.commit()
+                        conn.close()
+
+                        reply_text = f"✅ 已記錄：{food_name}，有效期限為 {expiry_date}。"
+                    except Exception as e:
+                        reply_text = "❌ 請用正確格式輸入，例如：\n牛奶 2025-06-10"
 
                 message = TextMessage(text=reply_text)
                 req = ReplyMessageRequest(reply_token=reply_token, messages=[message])
