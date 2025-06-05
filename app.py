@@ -4,7 +4,7 @@ from linebot.v3.messaging import MessagingApi, ReplyMessageRequest, TextMessage
 from linebot.v3.messaging import Configuration, ApiClient
 
 import os
-import sqlite3
+import psycopg2
 from datetime import datetime
 
 app = Flask(__name__)
@@ -18,17 +18,21 @@ configuration = Configuration(access_token=channel_access_token)
 # parser 負責驗證簽名
 parser = WebhookParser(channel_secret)
 
-# 初始化 SQLite 資料庫
+def get_connection():
+    db_url = os.environ.get("DATABASE_URL")
+    return psycopg2.connect(db_url)
+
+# 建立資料表（如果還沒有）
 def init_db():
-    conn = sqlite3.connect("food_records.db")
+    conn = get_connection()
     c = conn.cursor()
     c.execute('''
         CREATE TABLE IF NOT EXISTS foods (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             user_id TEXT,
             food_name TEXT,
-            expiry_date TEXT,
-            created_at TEXT
+            expiry_date DATE,
+            created_at TIMESTAMP
         )
     ''')
     conn.commit()
@@ -64,13 +68,12 @@ def callback():
                     food_name = parts[0]
                     expiry_date = datetime.strptime(parts[1], "%Y-%m-%d").date()
 
-                    # 儲存到資料庫
-                    conn = sqlite3.connect("food_records.db")
+                    conn = get_connection()
                     c = conn.cursor()
                     c.execute('''
                         INSERT INTO foods (user_id, food_name, expiry_date, created_at)
-                        VALUES (?, ?, ?, ?)
-                    ''', (user_id, food_name, expiry_date.isoformat(), datetime.now().isoformat()))
+                        VALUES (%s, %s, %s, %s)
+                    ''', (user_id, food_name, expiry_date, datetime.now()))
                     conn.commit()
                     conn.close()
 
