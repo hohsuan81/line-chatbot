@@ -56,23 +56,6 @@ def alter_table():
 
 alter_table()
 
-def analyze_user_behavior(user_id):
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT COUNT(*), SUM(CASE WHEN consumed THEN 1 ELSE 0 END)
-        FROM foods
-        WHERE user_id = %s
-    """, (user_id,))
-    total, consumed = cursor.fetchone()
-    conn.close()
-
-    if total == 0:
-        return "📊 目前還沒有資料可供分析喔！"
-    else:
-        rate = (consumed / total) * 100
-        return f"📊 你的食物消耗率為 {rate:.1f}%。保持良好的習慣，減少浪費！"
-
 @app.route("/callback", methods=['POST'])
 def callback():
     signature = request.headers['X-Line-Signature']
@@ -103,7 +86,7 @@ def callback():
                     total = cursor.fetchone()[0]
 
                     cursor.execute('''
-                        SELECT COUNT(*) FROM foods WHERE user_id = %s AND consumed = TRUE
+                        SELECT COUNT(*) FROM foods WHERE user_id = %s AND is_consumed = TRUE
                     ''', (user_id,))
                     consumed = cursor.fetchone()[0]
 
