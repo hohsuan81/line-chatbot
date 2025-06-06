@@ -74,30 +74,7 @@ def callback():
                 user_text = event.message.text
                 user_id = event.source.user_id
 
-                if user_text == "分析":
-                    conn = get_connection()
-                    cursor = conn.cursor()
-
-                    # 查詢使用者總共記錄了幾項食物，以及吃完幾項
-                    cursor.execute('''
-                        SELECT COUNT(*) FROM foods WHERE user_id = %s
-                    ''', (user_id,))
-                    total = cursor.fetchone()[0]
-
-                    cursor.execute('''
-                        SELECT COUNT(*) FROM foods WHERE user_id = %s AND is_consumed = TRUE
-                    ''', (user_id,))
-                    consumed = cursor.fetchone()[0]
-
-                    conn.close()
-
-                    if total == 0:
-                        reply_text = "目前沒有任何食物紀錄喔 🍽️"
-                    else:
-                        rate = round(consumed / total * 100, 1)
-                        reply_text = f"📊 消費分析\n你總共紀錄了 {total} 項食物，其中 {consumed} 項已吃完。\n➡️ 消耗率：{rate}%"
-
-                elif user_text == "未吃完":
+                if user_text == "未吃完":
                     conn = get_connection()
                     cursor = conn.cursor()
 
@@ -129,13 +106,15 @@ def callback():
                                 SUM(CASE WHEN is_consumed THEN 1 ELSE 0 END) AS consumed,
                                 ROUND(SUM(CASE WHEN is_consumed THEN 1 ELSE 0 END)::decimal / COUNT(*) * 100, 1) AS rate
                             FROM foods
-                            WHERE user_id = %s AND food_name = %s
+                            WHERE user_id = %s
+                            AND food_name = %s
+                            AND (is_consumed = TRUE OR expiry_date < CURRENT_DATE)
                         """, (user_id, target_food))
 
                         row = cur.fetchone()
                         conn.close()
 
-                        total, consumed, rate = row
+                        total, is_consumed, rate = row
                         if total == 0:
                             reply_text = f"🔍 沒有找到 {target_food} 的食用紀錄喔！"
                         else:
