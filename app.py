@@ -8,7 +8,6 @@ from scheduler import daily_expiry_reminder
 import os
 import psycopg2
 from datetime import datetime
-import re
 
 app = Flask(__name__)
 
@@ -75,7 +74,7 @@ def callback():
                 user_text = event.message.text
                 user_id = event.source.user_id
 
-                if user_text == "/分析":
+                if user_text == "分析":
                     conn = get_connection()
                     cursor = conn.cursor()
 
@@ -97,6 +96,60 @@ def callback():
                     else:
                         rate = round(consumed / total * 100, 1)
                         reply_text = f"📊 消費分析\n你總共紀錄了 {total} 項食物，其中 {consumed} 項已吃完。\n➡️ 消耗率：{rate}%"
+
+                elif user_text == "未吃完":
+                    conn = get_connection()
+                    cursor = conn.cursor()
+
+                    cursor.execute('''
+                        SELECT food_name, expiry_date FROM foods
+                        WHERE user_id = %s AND is_consumed IS DISTINCT FROM TRUE
+                        ORDER BY expiry_date
+                    ''', (user_id,))
+                    rows = cursor.fetchall()
+                    conn.close()
+
+                    if not rows:
+                        reply_text = "🎉 沒有未吃完的食物了！"
+                    else:
+                        reply_text = "🍱 未吃完的食物清單：\n"
+                        for name, date in rows:
+                            reply_text += f"• {name}（{date}）\n"
+
+                elif user_text.startswith("採買建議"):
+                    parts = user_text.strip().split()
+
+                    if len(parts) == 2:
+                        target_food = parts[1]
+
+                        conn = get_connection()
+                        cur = conn.cursor()
+                        cur.execute("""
+                            SELECT COUNT(*) AS total,
+                                SUM(CASE WHEN is_consumed THEN 1 ELSE 0 END) AS consumed,
+                                ROUND(SUM(CASE WHEN is_consumed THEN 1 ELSE 0 END)::decimal / COUNT(*) * 100, 1) AS rate
+                            FROM foods
+                            WHERE user_id = %s AND food_name = %s
+                        """, (user_id, target_food))
+
+                        row = cur.fetchone()
+                        conn.close()
+
+                        total, consumed, rate = row
+                        if total == 0:
+                            reply_text = f"🔍 沒有找到 {target_food} 的食用紀錄喔！"
+                        else:
+                            if rate >= 80:
+                                suggestion = "✓ 吃得很乾淨，建議可以維持或略增加份量"
+                            elif 50 <= rate < 80:
+                                suggestion = "✓ 建議維持目前購買量"
+                            else:
+                                suggestion = "⚠️ 常吃不完，建議下次減量購買"
+
+                            reply_text = f"🛒「{target_food}」的採買建議：\n{suggestion}（消耗率 {rate}%）"
+                    else:
+                        reply_text = "❌ 請輸入格式：採買建議 食物名稱\n例如：採買建議 牛奶"
+
 
                 else:
                     # 嘗試解析輸入格式為「食物名稱 yyyy-mm-dd」
